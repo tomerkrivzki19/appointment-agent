@@ -1,18 +1,28 @@
+# Dependencies
 node_modules/
+
+# Build output
 .next/
 out/
+build/
+dist/
 coverage/
+*.tsbuildinfo
 
+# Environment files and secrets
 .env
 .env.*
 !.env.example
+*.pem
+*.key
 
+# Local Google authorization storage
+/backend/data/
+
+# Logs
 *.log
-.DS_Store
 
-.env
-.env.*
-!.env.example
-backend/data/
-node_modules/
-.next/
+# Local tooling and operating system files
+.vercel/
+.DS_Store
+Thumbs.db
