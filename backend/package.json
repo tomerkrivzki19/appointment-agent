@@ -13,7 +13,9 @@
   "description": "",
   "dependencies": {
     "dotenv": "^18.0.8",
-    "express": "^5.3.0"
+    "express": "^5.3.0",
+    "express-session": "^1.19.0",
+    "googleapis": "^178.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

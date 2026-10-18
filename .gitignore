@@ -9,3 +9,10 @@ coverage/
 
 *.log
 .DS_Store
+
+.env
+.env.*
+!.env.example
+backend/data/
+node_modules/
+.next/

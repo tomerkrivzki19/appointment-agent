@@ -3,9 +3,19 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { log, getRecentLogs } from "./logger.js";
 
+import session from "express-session";
+import {
+  googleAuthRouter,
+  getCalendarClient,
+  checkGoogleCalendarConnection,
+} from "./googleCalender.js";
+
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 const SCENARIO = process.env.SCENARIO || "healthy";
+
+console.log("Loaded scenario:", SCENARIO);
+console.log("Running from:", process.cwd());
 
 const allowedScenarios = [
   "healthy",
@@ -21,6 +31,27 @@ if (!allowedScenarios.includes(SCENARIO)) {
 const appointments = [];
 
 app.use(express.json());
+
+if (!process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET is missing.");
+}
+
+app.use(
+  session({
+    name: "appointment.sid",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: false, // Local HTTP development.
+      maxAge: 30 * 60 * 1000,
+    },
+  }),
+);
+
+app.use("/auth", googleAuthRouter);
 
 const delay = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -40,14 +71,23 @@ function checkStorage() {
   return { status: "available" };
 }
 
-function checkCalendar() {
+async function checkCalendar() {
   if (SCENARIO === "calendar_down") {
+    const startedAt = Date.now();
+
+    await delay(1500);
+
     log("error", "Calendar provider request timed out", {
       dependency: "calendar",
       code: "ETIMEDOUT",
+      durationMs: Date.now() - startedAt,
     });
 
-    return { status: "unavailable", code: "ETIMEDOUT" };
+    return {
+      status: "unavailable",
+      code: "ETIMEDOUT",
+      durationMs: Date.now() - startedAt,
+    };
   }
 
   return { status: "available" };
@@ -96,14 +136,29 @@ app.get("/logs", (req, res) => {
   res.json({ logs: getRecentLogs() });
 });
 
-app.get("/dependencies", (req, res) => {
+app.get("/dependencies", async (req, res) => {
   const storage = checkStorage();
-  const calendar = checkCalendar();
+
+  // Preserve the simulated failure for the class demo.
+  let calendar = checkCalendar();
+
+  // If simulation passes, verify the real Google connection.
+  if (calendar.status === "available") {
+    calendar = await checkGoogleCalendarConnection();
+
+    if (calendar.status !== "available") {
+      log("error", "Google Calendar dependency check failed", {
+        dependency: "calendar",
+        code: calendar.code,
+        upstreamStatus: calendar.upstreamStatus,
+      });
+    }
+  }
 
   const healthy =
     storage.status === "available" && calendar.status === "available";
 
-  res.status(healthy ? 200 : 503).json({
+  return res.status(healthy ? 200 : 503).json({
     storage,
     calendar,
   });
@@ -119,7 +174,7 @@ app.get("/appointments", (req, res) => {
   res.json({ appointments });
 });
 
-app.post("/appointments", (req, res) => {
+app.post("/appointments", async (req, res) => {
   const { name, startsAt } = req.body ?? {};
 
   if (typeof name !== "string" || !name.trim()) {
@@ -134,9 +189,9 @@ app.post("/appointments", (req, res) => {
     });
   }
 
-  const date = new Date(startsAt);
+  const start = new Date(startsAt);
 
-  if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) {
+  if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
     return res.status(400).json({
       error: "The appointment must have a valid future date.",
     });
@@ -148,38 +203,135 @@ app.post("/appointments", (req, res) => {
     });
   }
 
-  const normalizedTime = date.toISOString();
-
-  const alreadyBooked = appointments.some(
-    (appointment) => appointment.startsAt === normalizedTime,
-  );
-
-  if (alreadyBooked) {
-    return res.status(409).json({
-      error: "This time slot is already booked.",
-    });
-  }
-
   if (checkCalendar().status !== "available") {
     return res.status(503).json({
       error: "Calendar provider is unavailable.",
     });
   }
 
-  const appointment = {
-    id: randomUUID(),
-    name: name.trim(),
-    startsAt: normalizedTime,
-    createdAt: new Date().toISOString(),
-  };
+  if ((await checkCalendar()).status !== "available") {
+    return res.status(503).json({
+      error: "Calendar provider is unavailable.",
+    });
+  }
 
-  appointments.push(appointment);
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+  const normalizedTime = start.toISOString();
 
-  log("info", "Appointment created", {
-    appointmentId: appointment.id,
+  // Prevent overlapping bookings created in this running app.
+  const overlaps = appointments.some((appointment) => {
+    const existingStart = new Date(appointment.startsAt).getTime();
+    const existingEnd = existingStart + 30 * 60 * 1000;
+
+    return start.getTime() < existingEnd && end.getTime() > existingStart;
   });
 
-  return res.status(201).json({ appointment });
+  if (overlaps) {
+    return res.status(409).json({
+      error: "This time overlaps an existing appointment.",
+    });
+  }
+
+  let calendar;
+
+  try {
+    calendar = getCalendarClient();
+  } catch {
+    log("error", "Google Calendar is not connected", {
+      dependency: "calendar",
+      code: "NOT_CONNECTED",
+    });
+
+    return res.status(503).json({
+      error:
+        "Connect Google Calendar at http://localhost:4000/auth/google first.",
+    });
+  }
+
+  try {
+    const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
+
+    // Check existing Google Calendar events before creating a booking.
+    const existing = await calendar.events.list(
+      {
+        calendarId,
+        timeMin: start.toISOString(),
+        timeMax: end.toISOString(),
+        singleEvents: true,
+        fields: "items(status,transparency),nextPageToken",
+        maxResults: 2500,
+      },
+      { timeout: 5000 },
+    );
+
+    const busy = existing.data.items?.some(
+      (event) =>
+        event.status !== "cancelled" && event.transparency !== "transparent",
+    );
+
+    if (busy || existing.data.nextPageToken) {
+      return res.status(409).json({
+        error: "Your Google Calendar is busy during this time.",
+      });
+    }
+
+    const appointmentId = randomUUID();
+
+    const result = await calendar.events.insert(
+      {
+        calendarId,
+        requestBody: {
+          // A stable ID helps prevent duplicate inserts on automatic retries.
+          id: appointmentId.replaceAll("-", ""),
+          summary: `Appointment: ${name.trim()}`,
+          description: "Created through the Appointment Agent demo.",
+          start: {
+            dateTime: start.toISOString(),
+            timeZone: "Asia/Jerusalem",
+          },
+          end: {
+            dateTime: end.toISOString(),
+            timeZone: "Asia/Jerusalem",
+          },
+        },
+      },
+      { timeout: 5000 },
+    );
+
+    const appointment = {
+      id: appointmentId,
+      name: name.trim(),
+      startsAt: normalizedTime,
+      endsAt: end.toISOString(),
+      googleEventId: result.data.id,
+      calendarLink: result.data.htmlLink,
+      createdAt: new Date().toISOString(),
+    };
+
+    appointments.push(appointment);
+
+    log("info", "Appointment created in Google Calendar", {
+      appointmentId: appointment.id,
+    });
+
+    return res.status(201).json({ appointment });
+  } catch (error) {
+    const status = error.response?.status;
+    const timedOut =
+      error.code === "ETIMEDOUT" || error.code === "ECONNABORTED";
+
+    log("error", "Google Calendar booking request failed", {
+      dependency: "calendar",
+      code: timedOut ? "ETIMEDOUT" : "GOOGLE_API_ERROR",
+      upstreamStatus: status,
+    });
+
+    return res.status(502).json({
+      error: timedOut
+        ? "Google Calendar timed out. Check your calendar before retrying; the event may have been created."
+        : "Google Calendar could not complete the booking. Check your calendar before retrying.",
+    });
+  }
 });
 
 app.listen(PORT, () => {

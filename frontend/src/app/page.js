@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Appointments from "@/components/Appointments";
+import ReactMarkdown from "react-markdown";
 
 export default function Home() {
   const [instruction, setInstruction] = useState(
@@ -107,11 +108,93 @@ export default function Home() {
         </form>
 
         {report && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-xl font-semibold">Investigation report</h2>
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
+              <div
+                aria-hidden="true"
+                className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-xl"
+              >
+                📋
+              </div>
 
-            <div className="whitespace-pre-wrap break-words leading-relaxed text-slate-700">
-              {report}
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Investigation report
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Findings based on diagnostic checks and recent logs
+                </p>
+              </div>
+            </div>
+
+            <div className="px-6 py-6 sm:px-8">
+              <ReactMarkdown
+                components={{
+                  h1: ({ children }) => (
+                    <h3 className="mb-4 mt-6 text-xl font-bold text-slate-900 first:mt-0">
+                      {children}
+                    </h3>
+                  ),
+                  h2: ({ children }) => (
+                    <h3 className="mb-3 mt-6 text-lg font-semibold text-slate-900 first:mt-0">
+                      {children}
+                    </h3>
+                  ),
+                  h3: ({ children }) => (
+                    <h4 className="mb-3 mt-5 font-semibold text-slate-900 first:mt-0">
+                      {children}
+                    </h4>
+                  ),
+                  p: ({ children }) => (
+                    <p className="mb-4 break-words text-sm leading-7 text-slate-600 last:mb-0">
+                      {children}
+                    </p>
+                  ),
+                  strong: ({ children }) => (
+                    <strong className="font-semibold text-slate-900">
+                      {children}
+                    </strong>
+                  ),
+                  ul: ({ children }) => (
+                    <ul className="mb-5 list-disc space-y-2 pl-5 text-sm leading-7 text-slate-600 marker:text-teal-600">
+                      {children}
+                    </ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol className="mb-5 list-decimal space-y-2 pl-5 text-sm leading-7 text-slate-600 marker:font-semibold marker:text-teal-700">
+                      {children}
+                    </ol>
+                  ),
+                  code: ({ children }) => (
+                    <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-teal-800">
+                      {children}
+                    </code>
+                  ),
+                  pre: ({ children }) => (
+                    <pre className="mb-5 overflow-x-auto rounded-xl bg-slate-100 p-4 text-sm">
+                      {children}
+                    </pre>
+                  ),
+                  blockquote: ({ children }) => (
+                    <blockquote className="mb-5 rounded-r-xl border-l-4 border-teal-500 bg-teal-50 px-4 py-3">
+                      {children}
+                    </blockquote>
+                  ),
+                  hr: () => <hr className="my-6 border-slate-200" />,
+                  a: ({ href, children }) => (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-teal-700 underline underline-offset-4"
+                    >
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {report}
+              </ReactMarkdown>
             </div>
           </section>
         )}
