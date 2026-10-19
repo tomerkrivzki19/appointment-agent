@@ -12,6 +12,8 @@ export default function Appointments() {
   const [success, setSuccess] = useState("");
 
   async function loadAppointments() {
+    if (busy) return;
+
     setBusy(true);
     setError("");
     setSuccess("");
@@ -27,7 +29,7 @@ export default function Appointments() {
         throw new Error(data.error || "Could not load appointments.");
       }
 
-      setAppointments(data.appointments);
+      setAppointments(data.appointments || []);
       setLoaded(true);
     } catch (error) {
       setError(error.message);
@@ -39,6 +41,7 @@ export default function Appointments() {
 
   async function bookAppointment(event) {
     event.preventDefault();
+    if (busy) return;
 
     const date = new Date(startsAt);
 
@@ -68,7 +71,7 @@ export default function Appointments() {
         throw new Error(data.error || "Could not book appointment.");
       }
 
-      setSuccess("Appointment booked! Click Refresh to update the list.");
+      setSuccess("Appointment booked. Refresh the list to view it.");
       setName("");
       setStartsAt("");
       setLoaded(false);
@@ -79,120 +82,180 @@ export default function Appointments() {
     }
   }
 
-  const inputClass =
-    "w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100";
-
   return (
-    <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div>
-        <h2 className="text-xl font-semibold">Appointments</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Book an appointment or check whether the service works.
+    <div className="booking-stack">
+      <section className="panel">
+        <div className="panel-heading">
+          <div className="section-icon teal" aria-hidden="true">
+            ▦
+          </div>
+          <div>
+            <p className="eyebrow">MAKE TIME</p>
+            <h2>New appointment</h2>
+          </div>
+        </div>
+
+        <p className="section-description">
+          Choose a time. Your booking is added to Google Calendar.
         </p>
-      </div>
 
-      <form onSubmit={bookAppointment} className="space-y-4">
-        <div>
-          <label
-            htmlFor="booking-name"
-            className="mb-2 block text-sm font-medium"
-          >
-            Name
-          </label>
+        <form onSubmit={bookAppointment} className="booking-form">
+          <div>
+            <label htmlFor="booking-name" className="field-label">
+              Appointment name
+            </label>
 
-          <input
-            id="booking-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            disabled={busy}
-            placeholder="Your name"
-            className={inputClass}
-          />
-        </div>
+            <input
+              id="booking-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              disabled={busy}
+              placeholder="e.g. Project presentation"
+              className="field"
+            />
+          </div>
 
-        <div>
-          <label
-            htmlFor="booking-time"
-            className="mb-2 block text-sm font-medium"
-          >
-            Date and time
-          </label>
+          <div>
+            <label htmlFor="booking-time" className="field-label">
+              Date & time
+            </label>
 
-          <input
-            id="booking-time"
-            type="datetime-local"
-            value={startsAt}
-            onChange={(event) => setStartsAt(event.target.value)}
-            required
-            disabled={busy}
-            className={inputClass}
-          />
+            <input
+              id="booking-time"
+              type="datetime-local"
+              value={startsAt}
+              onChange={(event) => setStartsAt(event.target.value)}
+              required
+              disabled={busy}
+              className="field"
+            />
+          </div>
 
-          <p className="mt-2 text-xs text-slate-500">
-            Uses your device’s local timezone.
-          </p>
-        </div>
+          <div className="booking-meta">
+            <span>30-minute appointment</span>
+            <span>Device local time</span>
+          </div>
 
-        <div className="flex flex-wrap gap-3">
           <button
             type="submit"
             disabled={busy || !name.trim() || !startsAt}
-            className="rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+            className="button button-primary button-full"
           >
-            Book appointment
+            {busy ? (
+              <>
+                <span className="spinner" aria-hidden="true" />
+                Please wait
+              </>
+            ) : (
+              <>
+                Book appointment <span aria-hidden="true">↗</span>
+              </>
+            )}
           </button>
+        </form>
+
+        {busy && (
+          <p role="status" className="muted small feedback">
+            Waiting for the appointment service…
+          </p>
+        )}
+
+        {error && (
+          <p role="alert" className="notice error">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p role="status" className="notice success">
+            {success}
+          </p>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="report-heading">
+          <div>
+            <p className="eyebrow">YOUR BOOKINGS</p>
+            <h2>Appointment list</h2>
+          </div>
 
           <button
             type="button"
             onClick={loadAppointments}
             disabled={busy}
-            className="rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="button button-secondary button-small"
           >
-            Refresh appointments
+            Refresh
           </button>
         </div>
-      </form>
 
-      {busy && (
-        <p role="status" className="text-sm text-slate-500">
-          Waiting for the appointment service…
+        {!loaded ? (
+          <div className="list-placeholder">
+            <p>View bookings from this running service.</p>
+            <span className="muted small">
+              Click Refresh to load appointments.
+            </span>
+          </div>
+        ) : appointments.length === 0 ? (
+          <div className="list-placeholder">
+            <p>Your schedule has room.</p>
+            <span className="muted small">
+              Create your first appointment above.
+            </span>
+          </div>
+        ) : (
+          <div className="appointment-list">
+            {[...appointments]
+              .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))
+              .map((appointment) => {
+                const date = new Date(appointment.startsAt);
+
+                return (
+                  <article className="appointment-item" key={appointment.id}>
+                    <div className="date-tile">
+                      <span>
+                        {date.toLocaleDateString(undefined, { month: "short" })}
+                      </span>
+                      <strong>{date.getDate()}</strong>
+                    </div>
+
+                    <div className="appointment-info">
+                      <h3>{appointment.name}</h3>
+                      <p>
+                        {date.toLocaleDateString(undefined, {
+                          weekday: "short",
+                          year: "numeric",
+                        })}
+                        {" · "}
+                        {date.toLocaleTimeString(undefined, {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+
+                      {appointment.calendarLink && (
+                        <a
+                          href={appointment.calendarLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-link"
+                        >
+                          View in Calendar ↗
+                        </a>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+          </div>
+        )}
+
+        <p className="list-footnote">
+          Local booking history resets when the backend restarts. Google
+          Calendar events remain saved.
         </p>
-      )}
-
-      {error && (
-        <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-700">
-          {error}
-        </p>
-      )}
-
-      {success && (
-        <p role="status" className="rounded-xl bg-teal-50 p-3 text-teal-800">
-          {success}
-        </p>
-      )}
-
-      {loaded && (
-        <div className="space-y-3 border-t border-slate-200 pt-4">
-          {appointments.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              No appointments booked yet.
-            </p>
-          ) : (
-            appointments.map((appointment) => (
-              <div
-                key={appointment.id}
-                className="rounded-xl border border-slate-200 p-4"
-              >
-                <p className="font-medium">{appointment.name}</p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {new Date(appointment.startsAt).toLocaleString()}
-                </p>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </section>
+      </section>
+    </div>
   );
 }

@@ -140,7 +140,7 @@ app.get("/dependencies", async (req, res) => {
   const storage = checkStorage();
 
   // Preserve the simulated failure for the class demo.
-  let calendar = checkCalendar();
+  let calendar = await checkCalendar();
 
   // If simulation passes, verify the real Google connection.
   if (calendar.status === "available") {
@@ -194,18 +194,6 @@ app.post("/appointments", async (req, res) => {
   if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
     return res.status(400).json({
       error: "The appointment must have a valid future date.",
-    });
-  }
-
-  if (checkStorage().status !== "available") {
-    return res.status(503).json({
-      error: "Appointment storage is unavailable.",
-    });
-  }
-
-  if (checkCalendar().status !== "available") {
-    return res.status(503).json({
-      error: "Calendar provider is unavailable.",
     });
   }
 
